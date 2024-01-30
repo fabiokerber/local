@@ -1,0 +1,71 @@
+Vagrant.configure('2') do |config|
+
+  config.env.enable
+  config.vm.boot_timeout = 1200
+
+  if Vagrant.has_plugin?("vagrant-vbguest")
+      config.vbguest.auto_update = false
+  end
+
+  config.vm.define 'agent' do |agent|
+
+    agent.vm.provider 'virtualbox' do |vb|
+      vb.memory = 1024
+      vb.cpus = 2
+      vb.name = 'jenkins-agent'
+      vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+    end
+
+    agent.vm.box = 'debian/bullseye64'
+    agent.vm.hostname = 'jenkins-agent'
+    agent.vm.network 'private_network', ip: ENV['AGENT_IP']
+    agent.vm.provision 'shell', inline: 'echo "$IP jenkins-master" >> /etc/hosts', env: {"IP" => ENV['MASTER_IP']}
+    agent.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+    agent.vm.provision 'shell', inline: 'sudo apt update'
+    agent.vm.provision 'shell', inline: 'sudo mkdir /root/.ssh'
+    agent.vm.provision 'shell', inline: 'sudo cp /vagrant/keys/id_rsa.pub /root/.ssh/authorized_keys'
+
+  end
+
+  config.vm.define 'master' do |master|
+
+    master.vm.provider 'virtualbox' do |vb|
+      vb.memory = "4096"
+      vb.cpus = 4
+      vb.name = 'jenkins-master'
+      vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+    end
+
+    master.disksize.size = '60GB'
+    master.vm.box = 'debian/bullseye64'
+    master.vm.hostname = 'jenkins-master'
+    master.vm.network 'private_network', ip: ENV['MASTER_IP']
+
+    master.vm.provision 'shell', inline: 'echo "$IP jenkins-agent" >> /etc/hosts', env: {"IP" => ENV['AGENT_IP']}
+    master.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+    master.vm.provision 'shell', inline: 'sudo apt update'
+    master.vm.provision 'shell', inline: 'sudo apt install -y python3-pip'
+    master.vm.provision 'shell', inline: 'sudo apt install -y software-properties-common build-essential libssl-dev libffi-dev python3-dev python3-testresources python3-docker unzip pwgen'
+    master.vm.provision 'shell', inline: 'sudo pip3 install --upgrade pip && sudo pip3 install --upgrade setuptools'
+    master.vm.provision 'shell', inline: 'sudo pip3 install setuptools_rust wheel && sudo pip3 install ansible'
+    master.vm.provision 'shell', inline: 'sudo pip3 install requests==2.22.0'
+    master.vm.provision 'shell', inline: 'sudo mkdir -p /etc/ansible/'
+    master.vm.provision 'shell', inline: 'sudo cp /vagrant/files/{ansible.cfg,hosts} /etc/ansible/'
+    master.vm.provision 'shell', inline: 'sudo mkdir /root/.ssh'
+    master.vm.provision 'shell', inline: 'sudo cp /vagrant/keys/* /root/.ssh/'
+    master.vm.provision 'shell', inline: 'sudo cp /vagrant/keys/id_rsa.pub /root/.ssh/authorized_keys'
+    master.vm.provision 'shell', inline: 'chmod 600 /root/.ssh/id_rsa'
+
+    master.vm.provision 'shell', inline: 'sudo ansible-playbook /vagrant/files/playbook.yaml --extra-vars "variable_host=agent"'
+    master.vm.provision 'shell', inline: 'sudo ansible-playbook /vagrant/files/playbook.yaml --extra-vars "variable_host=local"'
+
+    master.vm.provision 'shell', inline: 'sudo mkdir -p /var/lib/jenkins/.ssh'
+    master.vm.provision 'shell', inline: 'sudo cp /vagrant/keys/* /var/lib/jenkins/.ssh'
+    master.vm.provision 'shell', inline: 'chmod 600 /var/lib/jenkins/.ssh/id_rsa'
+    master.vm.provision 'shell', inline: 'sudo cp /vagrant/keys/id_rsa.pub /var/lib/jenkins/.ssh/authorized_keys'
+    master.vm.provision 'shell', inline: 'sudo chown -Rh jenkins:jenkins /var/lib/jenkins/.ssh'
+
+  end
+
+end
