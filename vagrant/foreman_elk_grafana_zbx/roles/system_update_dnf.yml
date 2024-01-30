@@ -1,0 +1,11 @@
+---
+
+- name: DNF UPDATE PACKAGE
+  block:
+
+    - name: DNF | Dnf Update
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+
+...

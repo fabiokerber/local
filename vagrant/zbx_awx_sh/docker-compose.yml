@@ -1,0 +1,59 @@
+version: '3'
+services:
+
+  mysql-server:
+    profiles: [zabbix]
+    build:
+      dockerfile: ./dockerfile/mysql-server.dockerfile
+      context: .
+    image: mysql:8.0
+    restart: unless-stopped
+    container_name: mysql-server
+    volumes:
+      - "/home/vagrant/zabbixdb:/var/lib/mysql/"
+    networks:
+      - zabbix-network
+
+  zabbix-java-gateway:
+    profiles: [zabbix]
+    image: zabbix/zabbix-java-gateway:alpine-${TAG}-latest
+    restart: unless-stopped
+    container_name: zabbix-java-gateway
+    networks:
+      - zabbix-network
+    depends_on:
+      - mysql-server
+
+  zabbix-server-mysql:
+    profiles: [zabbix]
+    build:
+      dockerfile: ./dockerfile/zabbix-server-mysql.dockerfile
+      context: .
+    image: zabbix/zabbix-server-mysql:alpine-${TAG}-latest
+    restart: unless-stopped
+    container_name: zabbix-server-mysql
+    ports:
+      - 10051:10051
+    networks:
+      - zabbix-network
+    depends_on:
+      - mysql-server
+
+  zabbix-web-nginx-mysql:
+    profiles: [zabbix]
+    build:
+      dockerfile: ./dockerfile/zabbix-web-nginx-mysql.dockerfile
+      context: .
+    image: zabbix/zabbix-web-nginx-mysql:alpine-${TAG}-latest
+    restart: unless-stopped
+    container_name: zabbix-web-nginx-mysql
+    ports:
+      - 8080:8080
+    networks:
+      - zabbix-network
+    depends_on:
+      - zabbix-server-mysql
+
+networks:
+  zabbix-network:
+    driver: bridge

@@ -1,0 +1,19 @@
+---
+
+- name: Restart Service
+  hosts: all
+  tasks:
+
+        - name: Check Status service Nginx
+          shell: "{{ item }}"
+          with_items:
+            - systemctl status nginx | grep -q running ; echo $?
+          register: statusnginx
+
+        - name: Check Status service Nginx
+          ansible.builtin.service:
+            name: nginx
+            state: restarted
+          when: statusnginx.results[0].stdout != "0"
+
+...

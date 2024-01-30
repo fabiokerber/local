@@ -1,0 +1,12 @@
+---
+
+- name: UnInstalling 7zip MSI 
+  hosts: all 
+
+  tasks:
+    - name: UnInstall 7z2107-x64.msi
+      win_package: 
+        path: C:\Users\Public\Downloads\7z2107-x64.msi
+        state: absent
+
+...

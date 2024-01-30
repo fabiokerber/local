@@ -1,0 +1,11 @@
+---
+
+- name: APT UPDATE PACKAGE
+  block:
+
+    - name: APT | Apt Update
+      ansible.builtin.apt:
+        name: "*"
+        state: latest
+
+...

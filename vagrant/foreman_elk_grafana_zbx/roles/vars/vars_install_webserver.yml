@@ -1,0 +1,9 @@
+---
+
+ubuntu_package:
+  - apache2
+
+rhel_package:
+  - httpd
+
+...

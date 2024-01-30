@@ -1,0 +1,47 @@
+---
+
+- name: REMOVE FILES
+  block:
+
+    - name: REMOVE FILES | Create folder
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      with_items:
+        - /tmp/files
+
+    - name: REMOVE FILES | Create files
+      ansible.builtin.file: 
+        path: /tmp/files/"{{ item }}"
+        state: touch
+        mode: 0775
+      with_items:
+        - file0.log
+        - file1.log
+        - file2.log
+        - file3.log
+        - file4.log
+
+    - name: REMOVE FILES | Create old files
+      ansible.builtin.file: 
+        path: /tmp/files/"{{ item }}"
+        state: touch
+        mode: 0775
+        modification_time: "202107081234.56"
+      with_items:
+        - file5.log
+        - file6.log
+        - file7.log
+        - file8.log
+        - file9.log
+
+    - name: REMOVE FILES | Remove old files
+      ansible.builtin.shell: "find /tmp/files/* -mtime +30 -exec rm -rfv '{}' +"
+      register: filesremoved
+
+    - name: REMOVE FILES | Show Files Removed
+      debug:
+        msg: "{{ filesremoved.stdout_lines }}"
+
+...

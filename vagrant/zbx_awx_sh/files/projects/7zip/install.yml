@@ -1,0 +1,17 @@
+---
+
+- name: Installing 7zip MSI 
+  hosts: all 
+
+  tasks:
+    - name: Download the 7zip installer
+      win_get_url:
+        url: https://www.7-zip.org/a/7z2107-x64.msi
+        dest: C:\Users\Public\Downloads\7z2107-x64.msi
+
+    - name: Install 7z2107-x64.msi
+      win_package: 
+        path: C:\Users\Public\Downloads\7z2107-x64.msi
+        state: present
+
+...

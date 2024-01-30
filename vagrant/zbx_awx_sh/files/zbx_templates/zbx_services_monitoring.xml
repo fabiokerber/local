@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<zabbix_export>
+    <version>5.2</version>
+    <date>2022-01-17T14:44:20Z</date>
+    <groups>
+        <group>
+            <name>Templates/Operating systems</name>
+        </group>
+    </groups>
+    <templates>
+        <template>
+            <template>Services Monitoring</template>
+            <name>Services Monitoring</name>
+            <groups>
+                <group>
+                    <name>Templates/Operating systems</name>
+                </group>
+            </groups>
+            <applications>
+                <application>
+                    <name>Services</name>
+                </application>
+            </applications>
+            <items>
+                <item>
+                    <name>Status Nginx</name>
+                    <key>system.run[&quot;systemctl status nginx | grep -q running ; echo $?&quot;]</key>
+                    <applications>
+                        <application>
+                            <name>Services</name>
+                        </application>
+                    </applications>
+                    <triggers>
+                        <trigger>
+                            <expression>{last()}=1</expression>
+                            <name>Nginx is Down</name>
+                            <priority>HIGH</priority>
+                        </trigger>
+                    </triggers>
+                </item>
+            </items>
+        </template>
+    </templates>
+</zabbix_export>

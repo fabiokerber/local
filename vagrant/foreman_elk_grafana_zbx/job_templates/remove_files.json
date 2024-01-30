@@ -1,0 +1,33 @@
+{
+	"description": "",
+	"description_format": "",
+	"template": "---\n\n- name: \"SAPO - Remove Files\"\n  hosts: all\n  become: true\n  vars:\n    logbook: \"SAPO - Remove Files\"\n  tasks:\n\n    - name: \"remove_files.yml\"\n      include_tasks: /etc/ansible/roles/remove_files.yml\n    \n    - name: \"logbook\"\n      include_tasks: /etc/ansible/roles/logbook.yml\n      \n...",
+	"locked": false,
+	"id": "",
+	"name": "SAPO - Remove Files",
+	"job_category": "SAPO - Ansible",
+	"provider_type": "Ansible",
+	"snippet": false,
+	"template_inputs": [],
+	"effective_user": {
+		"value": "",
+		"current_user": false,
+		"overridable": true
+	},
+	"locations": [
+		{
+			"id": 2,
+			"name": "Default Location",
+			"title": "Default Location",
+			"description": null
+		}
+	],
+	"organizations": [
+		{
+			"id": 1,
+			"name": "Default Organization",
+			"title": "Default Organization",
+			"description": null
+		}
+	]
+}

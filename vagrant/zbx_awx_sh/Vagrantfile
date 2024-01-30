@@ -1,0 +1,146 @@
+Vagrant.configure('2') do |config|
+
+    config.env.enable
+    config.vm.boot_timeout = 1200
+
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+
+    config.vm.define 'zabbix_srv' do |zabbix_srv|
+
+        zabbix_srv.vm.box = 'ubuntu/focal64'
+        zabbix_srv.vm.hostname = 'zabbix-srv'
+        zabbix_srv.vm.network 'public_network', ip: ENV['ZABBIX_IP'], bridge: ENV['INTERFACE_LAN']
+        zabbix_srv.vm.network 'forwarded_port', guest: 8080, host: 8080
+        zabbix_srv.vm.network 'forwarded_port', guest: 10051, host:10051
+
+        zabbix_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo apt-get install docker-ce -y'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo chmod +x /usr/local/bin/docker-compose'
+        zabbix_srv.vm.provision 'shell', inline: 'cd /vagrant && sudo docker-compose build'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo mkdir -p /home/vagrant/zabbixdb'
+        zabbix_srv.vm.provision 'shell', inline: 'sudo docker-compose -f /vagrant/docker-compose.yml --profile zabbix up -d'
+
+        zabbix_srv.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'zabbix-srv'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+    config.vm.define 'awx_srv' do |awx_srv|
+
+        awx_srv.vm.box = 'ubuntu/focal64'
+        awx_srv.vm.hostname = 'awx-srv'
+        awx_srv.vm.network 'public_network', ip: ENV['AWX_IP'], bridge: ENV['INTERFACE_LAN']
+        awx_srv.vm.network 'forwarded_port', guest: 80, host:80
+
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        awx_srv.vm.provision 'shell', inline: 'sudo cp /vagrant/files/ntpdate.sh /etc/cron.hourly/'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get install -y python3-pip ntpdate'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev python3-testresources python3-docker unzip pwgen'
+        awx_srv.vm.provision 'shell', inline: 'sudo pip3 install --upgrade pip && sudo pip3 install --upgrade setuptools'
+        awx_srv.vm.provision 'shell', inline: 'sudo pip3 install setuptools_rust wheel && sudo pip3 install ansible && sudo pip3 install docker-compose'
+        awx_srv.vm.provision 'shell', inline: 'sudo pip3 install requests==2.22.0'
+        awx_srv.vm.provision 'shell', inline: 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+        awx_srv.vm.provision 'shell', inline: 'sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get install docker-ce -y'
+        awx_srv.vm.provision 'shell', inline: 'sudo usermod -aG docker $USER'
+        awx_srv.vm.provision 'shell', inline: 'sudo systemctl restart docker'
+        awx_srv.vm.provision 'shell', inline: 'sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose'
+        awx_srv.vm.provision 'shell', inline: 'sudo chmod +x /usr/local/bin/docker-compose'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt install -y ansible'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt install -y nodejs npm'
+        awx_srv.vm.provision 'shell', inline: 'sudo npm install npm --global'
+        awx_srv.vm.provision 'shell', inline: 'sudo pip3 install docker-compose==1.29.2'
+        awx_srv.vm.provision 'shell', inline: 'sudo wget -O /tmp/17.1.0.zip https://github.com/ansible/awx/archive/17.1.0.zip'
+        awx_srv.vm.provision 'shell', inline: 'sudo unzip /tmp/17.1.0.zip -d /tmp'
+        awx_srv.vm.provision 'shell', inline: 'sudo rm -f /tmp/awx-17.1.0/installer/inventory'
+        awx_srv.vm.provision 'shell', inline: 'sudo cp /vagrant/files/inventory /tmp/awx-17.1.0/installer/'
+        awx_srv.vm.provision 'shell', inline: 'sudo sed -i "s|admin_password=password|admin_password=`(pwgen -N 1)`|g" /tmp/awx-17.1.0/installer/inventory'
+        awx_srv.vm.provision 'shell', inline: 'sudo sed -i "s|secret_key=awxsecret|secret_key=`(pwgen -N 1 -s 30)`|g" /tmp/awx-17.1.0/installer/inventory'
+        awx_srv.vm.provision 'shell', inline: 'sudo mkdir -p /var/lib/awx'
+        awx_srv.vm.provision 'shell', inline: 'sudo ansible-playbook -i /tmp/awx-17.1.0/installer/inventory /tmp/awx-17.1.0/installer/install.yml'
+        awx_srv.vm.provision 'shell', inline: 'sudo pip3 install ansible-tower-cli'
+        awx_srv.vm.provision 'shell', inline: 'sudo apt-get install -y libjson-pp-perl jq'
+        awx_srv.vm.provision 'shell', inline: 'sudo tower-cli config verify_ssl false'
+        awx_srv.vm.provision 'shell', inline: 'sudo tower-cli config host http://awx-srv'
+        awx_srv.vm.provision 'shell', inline: 'sudo tower-cli config username admincli'
+        awx_srv.vm.provision 'shell', inline: 'sudo tower-cli config password `(pwgen -N 1)`'
+
+        awx_srv.vm.provider 'virtualbox' do |vb|
+            vb.memory = 8192
+            vb.cpus = 4
+            vb.name = 'awx-srv'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+    config.vm.define 'centos_srv01' do |centos_srv01|
+
+        centos_srv01.vm.box = 'centos/7'
+        centos_srv01.vm.hostname = 'centos-srv01'
+        centos_srv01.vm.network 'public_network', ip: ENV['CENTOS_SRV01'], bridge: ENV['INTERFACE_LAN']
+        centos_srv01.vm.network 'forwarded_port', guest: 10050, host:10050
+
+        centos_srv01.vm.provision 'shell', inline: 'sudo timedatectl set-timezone America/Sao_Paulo'
+        centos_srv01.vm.provision 'shell', inline: 'sudo cp /vagrant/files/ntpdate.sh /etc/cron.hourly/'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i s/^SELINUX=.*$/SELINUX=permissive/ /etc/selinux/config && sudo setenforce 0'
+        centos_srv01.vm.provision 'shell', inline: 'sudo systemctl stop firewalld && sudo systemctl disable firewalld'
+        centos_srv01.vm.provision 'shell', inline: 'sudo rpm -Uvh https://repo.zabbix.com/zabbix/5.2/rhel/7/x86_64/zabbix-release-5.2-1.el7.noarch.rpm'
+        centos_srv01.vm.provision 'shell', inline: 'sudo yum install -y zabbix-agent ntpdate'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|# LogFileSize=1|AllowKey=system.run[*]|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|LogFileSize=0|LogFileSize=2|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|# LogRemoteCommands=0|LogRemoteCommands=1|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|Server=127.0.0.1|Server=192.168.0.50|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|# ListenPort=10050|ListenPort=10050|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|Hostname=Zabbix server|Hostname=192.168.0.150|g" /etc/zabbix/zabbix_agentd.conf'
+        centos_srv01.vm.provision 'shell', inline: 'sudo systemctl restart zabbix-agent'
+        centos_srv01.vm.provision 'shell', inline: 'sudo systemctl enable zabbix-agent.service'
+        centos_srv01.vm.provision 'shell', inline: 'sudo useradd -p $(openssl passwd -1 awx_pass) awx'
+        centos_srv01.vm.provision 'shell', inline: 'sudo usermod -a -G wheel awx'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sed -i "s|#PasswordAuthentication yes|PasswordAuthentication yes|g" /etc/ssh/sshd_config'
+        centos_srv01.vm.provision 'shell', inline: 'sudo systemctl restart sshd'
+        centos_srv01.vm.provision 'shell', inline: 'sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm'
+        centos_srv01.vm.provision 'shell', inline: 'sudo yum install -y jq'
+        centos_srv01.vm.provision 'shell', inline: 'sudo cp /vagrant/files/visudo.sh /tmp/'
+        centos_srv01.vm.provision 'shell', inline: 'sudo sh /tmp/visudo.sh'
+
+        centos_srv01.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'centos-srv01'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+    config.vm.define 'win_server' do |win_server|
+
+        win_server.vm.box = 'gusztavvargadr/windows-server'
+        win_server.vm.hostname = 'win-server'
+        win_server.vm.network 'public_network', bridge: ENV['INTERFACE_LAN']
+
+        win_server.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'win-server'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+end
