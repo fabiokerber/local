@@ -1,0 +1,79 @@
+Vagrant.configure('2') do |config|
+    config.env.enable
+    config.vm.boot_timeout = 1200
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+    config.vm.define 'ubuntu_nfs' do |ubuntu_nfs|
+        ubuntu_nfs.vm.box = 'ubuntu/focal64'
+        ubuntu_nfs.vm.hostname = 'ubuntu-nfs.fks.lab'
+        ubuntu_nfs.vm.network 'private_network', ip: ENV['UBUNTU_NFS_IP']
+        ubuntu_nfs.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git nfs-kernel-server tree
+            mkdir /var/nfs/awx -p
+            echo '/var/nfs 192.168.56.0/24(rw,sync,no_root_squash,no_subtree_check)' >> /etc/exports
+            exportfs -ar
+            chmod -R 777 /var/nfs
+        SHELL
+        ubuntu_nfs.vm.provider 'virtualbox' do |vb|
+            vb.memory = 512
+            vb.cpus = 1
+            vb.name = 'ubuntu-nfs'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+        ubuntu_kind.vm.box = 'ubuntu/focal64'
+        ubuntu_kind.vm.hostname = 'ubuntu-kind.fks.lab'
+        ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+        ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/awxhelm_version', env: {"VERSION" => ENV['HELM_AWX_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/psqlhelm_version', env: {"VERSION" => ENV['HELM_PSQL_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git bash-completion nfs-common postgresql-client
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "alias k=kubectl" >> $HOME/.bashrc
+            echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+            source $HOME/.bashrc
+            curl -fsSL https://get.docker.com | sudo bash
+            chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+            kind create cluster --config /vagrant/files/kind-cluster.yaml
+            kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker3 node-role.kubernetes.io/worker=worker
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            bash /tmp/install-helm.sh
+            helm repo add bitnami https://charts.bitnami.com/bitnami
+            helm repo add awx-operator https://ansible.github.io/awx-operator/
+            helm repo update
+            git clone https://github.com/ahmetb/kubectx /opt/kubectx
+            ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+            ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+            kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+            kubectl patch storageclass standard -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+            kubectl create ns awx
+            kubectl -n awx apply -f /vagrant/files/psql-volumes.yaml
+            kubectl patch storageclass awx-storageclass -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+            helm upgrade --install awx awx-operator/awx-operator --version "$(cat /tmp/awxhelm_version)" --values /vagrant/files/awx-values.yaml --namespace awx
+        SHELL
+        ubuntu_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 8192
+            vb.cpus = 4
+            vb.name = 'ubuntu-kind'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+end
