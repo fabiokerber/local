@@ -1,0 +1,84 @@
+Vagrant.configure('2') do |config|
+    config.env.enable
+    config.vm.boot_timeout = 1200
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+    config.vm.define 'ubuntu_nfs' do |ubuntu_nfs|
+        ubuntu_nfs.vm.box = 'ubuntu/focal64'
+        ubuntu_nfs.vm.hostname = 'ubuntu-nfs.fks.lab'
+        ubuntu_nfs.vm.network 'private_network', ip: ENV['UBUNTU_NFS_IP']
+        ubuntu_nfs.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git nfs-kernel-server tree
+            mkdir /var/nfs/localstack/storage -p
+            echo '/var/nfs/localstack 192.168.56.0/24(rw,sync,no_subtree_check)' >> /etc/exports
+            exportfs -ar
+            chmod -R 777 /var/nfs/localstack
+        SHELL
+        ubuntu_nfs.vm.provider 'virtualbox' do |vb|
+            vb.memory = 512
+            vb.cpus = 1
+            vb.name = 'ubuntu-nfs'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+        ubuntu_kind.vm.box = 'ubuntu/focal64'
+        ubuntu_kind.vm.hostname = 'ubuntu-kind.fks.lab'
+        ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+        ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/localstack_version', env: {"VERSION" => ENV['LOCALSTACK_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git bash-completion nfs-common python3-pip software-properties-common gnupg2 curl
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "alias k=kubectl" >> $HOME/.bashrc
+            echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+            source $HOME/.bashrc
+            curl -fsSL https://get.docker.com | sudo bash
+            chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+            kind create cluster --config /vagrant/files/kind-cluster.yaml
+            kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker3 node-role.kubernetes.io/worker=worker
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            bash /tmp/install-helm.sh
+            helm repo add localstack-repo https://helm.localstack.cloud
+            helm repo update
+            git clone https://github.com/ahmetb/kubectx /opt/kubectx
+            ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+            ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+            kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+            kubectl create ns awslocal
+            kubectl -n awslocal apply -f /vagrant/files/ls-volumes.yaml
+            helm upgrade --install awslocal localstack-repo/localstack --version "$(cat /tmp/localstack_version)" --values /vagrant/files/ls-values.yaml --namespace awslocal
+            pip3 install localstack
+            pip3 install awscli
+            pip3 install awscli-local
+            pip3 install terraform-local
+            curl https://apt.releases.hashicorp.com/gpg | gpg --dearmor > hashicorp.gpg
+            install -o root -g root -m 644 hashicorp.gpg /etc/apt/trusted.gpg.d/
+            apt-add-repository "deb [arch=$(dpkg --print-architecture)] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+            apt install terraform -y
+            cp -r /vagrant/files/tf-* /root/
+        SHELL
+        ubuntu_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'ubuntu-kind'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+end

@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ls-storage
+  namespace: awslocal
+spec:
+  volumeMode: Filesystem
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    path: /var/nfs/localstack
+    server: 192.168.56.200
+  storageClassName: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ls-storage
+  namespace: awslocal
+spec:
+  volumeMode: Filesystem
+  volumeName: ls-storage
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: ""
