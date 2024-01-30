@@ -1,0 +1,8 @@
+cluster.name: "aut-cluster"
+network.host: 0.0.0.0
+
+path:
+  data:
+    - /data
+  repo:
+    - /snap

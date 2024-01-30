@@ -1,0 +1,95 @@
+- key: beat
+  anchor: beat-common
+  title: Beat
+  description: >
+    Contains common beat fields available in all event types.
+  fields:
+    - name: cont.level
+      level: core
+      type: text
+      example: "INFO"
+
+    - name: cont.thread
+      level: core
+      type: keyword
+      example: "epollEventLoopGroup-3-17"
+
+    - name: cont.logger
+      level: core
+      type: keyword
+      example: "pt.sapo.sapofe.site.ResponseInfo"
+
+    - name: cont.message
+      level: core
+      type: keyword
+      example: "Requestreceived"
+
+    - name: cont.environment
+      level: core
+      type: text
+      example: "production"
+
+    - name: cont.project
+      level: core
+      type: keyword
+      example: "pqsapopt"
+
+    - name: cont.referer
+      level: core
+      type: keyword
+      example: "-"
+
+    - name: cont.ncache
+      level: core
+      type: text
+      example: "hit"
+
+    - name: cont.contentLenght
+      level: core
+      type: integer
+      example: "15279"
+
+    - name: cont.method
+      level: core
+      type: text
+      example: "GET"
+
+    - name: cont.responseTime
+      level: core
+      type: integer
+      example: "0"
+
+    - name: cont.host
+      level: core
+      type: keyword
+      example: "sapo.pt"
+
+    - name: cont.protocolVersion
+      level: core
+      type: keyword
+      example: "HTTP/1.1"
+
+    - name: cont.userAgent
+      level: core
+      type: keyword
+      example: "kube-probe/1.19"
+
+    - name: cont.remote
+      level: core
+      type: ip
+      example: "10.135.8.46"
+
+    - name: cont.uri
+      level: core
+      type: keyword
+      example: "/"
+
+    - name: cont.tid
+      level: core
+      type: keyword
+      example: "bce3760c-841e-47b5-a047-2753e606e103"
+
+    - name: cont.status
+      level: core
+      type: integer
+      example: "200"

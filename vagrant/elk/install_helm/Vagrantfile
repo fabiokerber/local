@@ -1,0 +1,136 @@
+Vagrant.configure('2') do |config|
+    config.env.enable
+    config.vm.boot_timeout = 1200
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+    config.vm.define 'ubuntu_nfs' do |ubuntu_nfs|
+        ubuntu_nfs.vm.box = 'ubuntu/focal64'
+        ubuntu_nfs.vm.hostname = 'ubuntu-nfs.fks.lab'
+        ubuntu_nfs.vm.network 'private_network', ip: ENV['UBUNTU_NFS_IP']
+        ubuntu_nfs.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git nfs-kernel-server
+            mkdir /var/nfs/elk/settings -p
+            echo '/var/nfs/elk 192.168.56.0/24(rw,sync,no_subtree_check)' >> /etc/exports
+            exportfs -ar
+            git clone https://github.com/fabiokerber/ELK.git /home/vagrant/ELK
+            cp -r /home/vagrant/ELK/snapshot_template/b/* /var/nfs/elk/settings/
+            chmod -R 777 /var/nfs/elk
+        SHELL
+        ubuntu_nfs.vm.provider 'virtualbox' do |vb|
+            vb.memory = 512
+            vb.cpus = 1
+            vb.name = 'ubuntu-nfs'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    if ENV["ELK_VERSION"] == "7.16.1"
+        config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+            ubuntu_kind.vm.box = 'ubuntu/lunar64'
+            ubuntu_kind.vm.hostname = 'ubuntu-kind.fks.lab'
+            ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+            ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/elk_version', env: {"VERSION" => ENV['ELK_VERSION']}
+            ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+            ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+                apt update
+                apt install -y git bash-completion nfs-common
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+                kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+                curl -sS https://webinstall.dev/k9s | sudo bash
+                echo "alias k=kubectl" >> $HOME/.bashrc
+                echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+                echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+                source $HOME/.bashrc
+                curl -fsSL https://get.docker.com | sudo bash
+                chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+                kind create cluster --config /vagrant/files/cluster.yaml
+                kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+                kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+                kubectl label node kind-worker3 node-role.kubernetes.io/worker=worker
+                curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+                chmod u+x /tmp/install-helm.sh
+                bash /tmp/install-helm.sh
+                helm repo add elastic https://helm.elastic.co
+                helm repo add portainer https://portainer.github.io/k8s/
+                helm repo update
+                git clone https://github.com/ahmetb/kubectx /opt/kubectx
+                ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+                ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+                kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+                git clone https://github.com/fabiokerber/ELK.git /home/vagrant/ELK
+            SHELL
+            ubuntu_kind.vm.provider 'virtualbox' do |vb|
+                vb.memory = 12288
+                vb.cpus = 6
+                vb.name = 'ubuntu-kind'
+                vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+            end
+        end
+    elsif ENV["ELK_VERSION"] == "8.5.1"
+        config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+            ubuntu_kind.vm.box = 'ubuntu/lunar64'
+            ubuntu_kind.vm.hostname = 'ubuntu-kind.fks.lab'
+            ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+            ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-kind.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KIND_IP']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs.fks.lab" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+            ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/elk_version', env: {"VERSION" => ENV['ELK_VERSION']}
+            ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+            ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+                apt update
+                apt install -y git bash-completion nfs-common
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+                kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+                curl -sS https://webinstall.dev/k9s | sudo bash
+                echo "alias k=kubectl" >> $HOME/.bashrc
+                echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+                echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+                source $HOME/.bashrc
+                curl -fsSL https://get.docker.com | sudo bash
+                chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+                kind create cluster --config /vagrant/files/cluster.yaml
+                kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+                kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+                kubectl label node kind-worker3 node-role.kubernetes.io/worker=worker
+                curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+                chmod u+x /tmp/install-helm.sh
+                bash /tmp/install-helm.sh
+                helm repo add elastic https://helm.elastic.co
+                helm repo add portainer https://portainer.github.io/k8s/
+                helm repo update
+                git clone https://github.com/ahmetb/kubectx /opt/kubectx
+                ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+                ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+                kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+                git clone https://github.com/fabiokerber/ELK.git /home/vagrant/ELK
+                kubectl create ns logging
+                kubectl -n logging apply -f /home/vagrant/ELK/install_helm/files/volumes.yaml
+                openssl req -x509 -sha256 -nodes -newkey rsa:4096 -days 365 -subj "/CN=elasticsearch.default.svc.cluster.local" -addext "subjectAltName=DNS:elasticsearch.default.svc,DNS:elasticsearch.default.svc.cluster.local" -keyout tls.key -out tls.crt
+                kubectl create secret generic elasticsearch-tls --from-file=tls.key --from-file=tls.crt --namespace logging
+                helm upgrade --install elasticsearch elastic/elasticsearch --version "$(cat /tmp/elk_version)" --values /home/vagrant/ELK/install_helm/files/es-values-v8.yaml --namespace logging
+                sleep 300
+                kubectl -n logging get secrets/elasticsearch-master-credentials -o jsonpath='{.data.password}' | base64 -d
+                export ELASTIC_PASS=$(kubectl -n logging get secrets/elasticsearch-master-credentials -o jsonpath='{.data.password}' | base64 -d)
+                sed -i 's|elastic_pass|'"$ELASTIC_PASS"'|g' /home/vagrant/ELK/install_helm/files/kb-values-v8.yaml
+                helm upgrade --install kibana elastic/kibana --version "$(cat /tmp/elk_version)" --values /home/vagrant/ELK/install_helm/files/kb-values-v8.yaml --namespace logging
+                #kubectl -n logging apply -f /home/vagrant/ELK/install_helm/files/es-ing.yaml
+                #kubectl -n logging apply -f /home/vagrant/ELK/install_helm/files/kb-ing.yaml
+            SHELL
+            ubuntu_kind.vm.provider 'virtualbox' do |vb|
+                vb.memory = 12288
+                vb.cpus = 6
+                vb.name = 'ubuntu-kind'
+                vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+            end
+        end
+    end
+end

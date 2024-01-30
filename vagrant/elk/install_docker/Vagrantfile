@@ -1,0 +1,95 @@
+Vagrant.configure('2') do |config|
+
+    config.env.enable
+    config.vm.boot_timeout = 1200
+
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+
+    config.vm.define 'elk' do |elk|
+
+        elk.vm.box = 'debian/bullseye64'
+        elk.vm.hostname = 'log.fks.lab'
+        elk.vm.network 'private_network', ip: ENV['LOG_IP']
+
+        elk.vm.provision 'shell', inline: 'echo "$IP srv01.fks.lab srv01" >> /etc/hosts', env: {"IP" => ENV['SRV01_IP']}
+
+        elk.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        elk.vm.provision 'shell', inline: 'sudo sysctl -w vm.max_map_count=262144'
+        elk.vm.provision 'shell', inline: 'sudo touch {/root/,~/}.vimrc'
+        elk.vm.provision 'shell', inline: 'sudo apt update'
+
+        elk.vm.provision 'shell', inline: 'sudo apt install -y vim git'
+        elk.vm.provision 'shell', inline: 'sudo apt install -y ca-certificates curl gnupg2 software-properties-common acl'
+        elk.vm.provision 'shell', inline: 'sudo mkdir -p /etc/apt/keyrings'
+        elk.vm.provision 'shell', inline: 'curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg'
+        elk.vm.provision 'shell', inline: 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
+        elk.vm.provision 'shell', inline: 'sudo apt update'
+        elk.vm.provision 'shell', inline: 'sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin'
+        elk.vm.provision 'shell', inline: 'sudo systemctl restart docker'
+        elk.vm.provision 'shell', inline: 'sudo setfacl -m user:vagrant:rw /var/run/docker.sock'
+        elk.vm.provision 'shell', inline: 'sudo usermod -aG docker vagrant'
+        elk.vm.provision 'shell', inline: 'sudo mkdir /mnt/disk2'
+
+        elk.vm.provision 'shell', inline: 'mkdir -p /home/vagrant/volumes/elk/{logstash,elastic}/config'
+        elk.vm.provision 'shell', inline: 'mkdir -p /home/vagrant/volumes/elk/elastic/{data,snap}'
+        elk.vm.provision 'shell', inline: 'sudo cp /vagrant/files/elasticsearch.yml /home/vagrant/volumes/elk/elastic/config/'
+        elk.vm.provision 'shell', inline: 'sudo cp /vagrant/files/logstash.conf /home/vagrant/volumes/elk/logstash/config/'
+        elk.vm.provision 'shell', inline: 'sudo chown vagrant. -R /home/vagrant/volumes'
+        elk.vm.provision 'shell', inline: 'docker network create elk-network'
+        elk.vm.provision 'shell', inline: 'docker compose -f /vagrant/files/elk-docker-compose.yml up -d'
+
+        elk.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'log.fks.lab'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+    config.vm.define 'srv01' do |srv01|
+
+        srv01.vm.box = 'debian/bullseye64'
+        srv01.vm.hostname = 'srv01.fks.lab'
+        srv01.vm.network 'private_network', ip: ENV['SRV01_IP'], bridge: ENV['INTERFACE']
+
+        srv01.vm.provision 'shell', inline: 'echo "$IP log.fks.lab log" >> /etc/hosts', env: {"IP" => ENV['LOG_IP']}
+
+        srv01.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        srv01.vm.provision 'shell', inline: 'sudo sysctl -w vm.max_map_count=262144'
+        srv01.vm.provision 'shell', inline: 'sudo touch {/root/,~/}.vimrc'
+        srv01.vm.provision 'shell', inline: 'sudo apt update'
+
+        srv01.vm.provision 'shell', inline: 'sudo apt install -y vim git auditd audispd-plugins'
+        srv01.vm.provision 'shell', inline: 'sudo apt install -y ca-certificates curl gnupg2 software-properties-common acl'
+        srv01.vm.provision 'shell', inline: 'sudo mkdir -p /etc/apt/keyrings'
+        srv01.vm.provision 'shell', inline: 'curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg'
+        srv01.vm.provision 'shell', inline: 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
+        srv01.vm.provision 'shell', inline: 'sudo apt update'
+        srv01.vm.provision 'shell', inline: 'sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin'
+        srv01.vm.provision 'shell', inline: 'sudo systemctl restart docker'
+        srv01.vm.provision 'shell', inline: 'sudo setfacl -m user:vagrant:rw /var/run/docker.sock'
+        srv01.vm.provision 'shell', inline: 'sudo usermod -aG docker vagrant'
+
+        srv01.vm.provision 'shell', inline: 'mkdir -p /home/vagrant/volumes/elk/filebeat/config'
+        srv01.vm.provision 'shell', inline: 'sudo cp /vagrant/files/filebeat.yml /home/vagrant/volumes/elk/filebeat/config/'
+        srv01.vm.provision 'shell', inline: 'sed -i "s/IP/$IP/g" /home/vagrant/volumes/elk/filebeat/config/filebeat.yml', env: {"IP" => ENV['LOG_IP']}
+        srv01.vm.provision 'shell', inline: 'sudo chown vagrant. -R /home/vagrant/volumes'
+        srv01.vm.provision 'shell', inline: 'sudo chown root.vagrant /home/vagrant/volumes/elk/filebeat/config/filebeat.yml'
+        srv01.vm.provision 'shell', inline: 'docker network create filebeat-network'
+        srv01.vm.provision 'shell', inline: 'docker compose -f /vagrant/files/filebeat-docker-compose.yml up -d'
+
+        srv01.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'srv01.fks.lab'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+end

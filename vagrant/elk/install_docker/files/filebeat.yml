@@ -1,0 +1,107 @@
+# ============================== Filebeat inputs ===============================
+
+filebeat.inputs:
+
+- type: filestream
+  id: srv01-simple-log
+  enabled: true
+  paths:
+    - /var/log/simple.log
+  fields:
+    reference.file: simple.log
+  exclude_lines: ['minim']
+
+
+- type: filestream
+  id: srv01-geoip-log
+  enabled: true
+  paths:
+    - /var/log/geoip.log
+  fields:
+    reference.file: geoip.log
+  pipeline: geoip-pipeline
+
+# ========== DECODE JSON ==========
+
+- type: filestream
+  id: srv01-decode-log
+  enabled: true
+  paths:
+    - /var/log/decode.log
+  fields:
+    reference.file: decode.log
+
+# =================================
+
+# ============================== Filebeat modules ==============================
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+# ======================= Elasticsearch template setting =======================
+
+setup.template.enabled: false
+setup.template.overwrite: false
+#setup.template.fields: "fields.yml"
+setup.template.name: "filebeat-%{[agent.version]}-${HOSTNAME}-template"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+  index.codec: best_compression
+
+# ====================== Index Lifecycle Management (ILM) ======================
+
+setup.ilm.enabled: true
+setup.ilm.overwrite: false
+setup.ilm.policy_name: "filebeat-%{[agent.version]}-${HOSTNAME}-policy"
+setup.ilm.rollover_alias: "filebeat-%{[agent.version]}-${HOSTNAME}"
+setup.ilm.pattern: "000001"
+
+# =================================== Kibana ===================================
+
+setup.kibana:
+
+# ================================== Outputs ===================================
+
+output.elasticsearch:
+
+  hosts: ["IP:9200"]
+
+# ================================= Processors =================================
+
+processors:
+
+# ========== DECODE JSON ==========
+
+  - decode_json_fields:
+      fields: ["message"]
+      process_array: false
+      max_depth: 2
+      target: ""
+      overwrite_keys: true
+      add_error_key: false
+
+# =================================
+
+  - drop_fields:
+      fields: [
+        "agent.ephemeral_id",
+        "agent.hostname",
+        "agent.id",
+        "agent.name",
+        "agent.type",
+        "agent.version",
+        "host.architecture",
+        "host.containerized",
+        "host.name",
+        "host.os.codename",
+        "host.os.family",
+        "host.os.kernel",
+        "host.os.platform",
+        "host.os.type",
+        "host.os.name",
+        "host.os.version",
+        "input.type"
+        ]
+      ignore_missing: true

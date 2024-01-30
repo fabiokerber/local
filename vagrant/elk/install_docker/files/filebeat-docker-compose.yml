@@ -1,0 +1,28 @@
+version: '3.7'
+services:
+
+  filebeat:
+    container_name: filebeat
+    image: docker.elastic.co/beats/filebeat:${STACK_VERSION}
+    restart: unless-stopped
+    hostname: srv01.aut.lab
+    user: root
+    volumes:
+      - /home/vagrant/volumes/elk/filebeat/config/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/log/:/var/log/:ro
+      - /var/log/audit/:/var/log/audit/:ro
+      #- /var/run/docker.sock:/var/run/docker.sock
+      #- /var/lib/docker/containers/:/var/lib/docker/containers/:ro
+      #- /var/lib/docker/volumes/jenkins_home/_data/jobs/:/var/lib/docker/volumes/jenkins_home/_data/jobs/:ro
+    environment:
+      ELASTICSEARCH_HOST: ${ELASTIC_HOST}
+      KIBANA_HOST: ${KIBANA_HOST}
+      ELASTICSEARCH_USERNAME: ${ELASTIC_USERNAME}
+      ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD}
+      HOSTNAME: srv01
+    networks:
+      - filebeat-network
+
+networks:
+  filebeat-network:
+    driver: bridge
