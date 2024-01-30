@@ -1,0 +1,1 @@
+curl -X POST -H 'Content-type: application/json' --data '{"text":"Pipeline executada com FALHA!"}' https://hooks.slack.com/services/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

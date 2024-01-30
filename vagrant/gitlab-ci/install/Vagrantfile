@@ -1,0 +1,65 @@
+Vagrant.configure('2') do |config|
+
+    config.env.enable
+    config.vm.boot_timeout = 1200
+
+    config.vm.define 'gitlab_srv' do |gitlab_srv|
+
+        gitlab_srv.vm.box = 'ubuntu/focal64'
+        gitlab_srv.vm.hostname = 'gitlab-srv'
+        gitlab_srv.vm.network 'private_network', ip: ENV['GITLAB_IP']
+
+        gitlab_srv.vm.provision 'shell', inline: 'sudo timedatectl set-timezone America/Sao_Paulo'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo cp /vagrant/files/ntpdate.sh /etc/cron.hourly/'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo apt-get install -y docker-ce ca-certificates curl openssh-server python ntpdate'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo chmod +x /usr/local/bin/docker-compose'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo curl -sS https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh | sudo bash'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo apt-get update'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo apt-get install -y gitlab-ce'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo mv /etc/gitlab/gitlab.rb /etc/gitlab/gitlab.rb.old'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo cp /vagrant/files/gitlab.rb /etc/gitlab/'
+        gitlab_srv.vm.provision 'shell', inline: 'sudo gitlab-ctl reconfigure'
+        gitlab_srv.vm.provision 'shell', inline: 'cd /tmp && curl -LJO "https://gitlab-runner-downloads.s3.amazonaws.com/latest/deb/gitlab-runner_amd64.deb"'
+        gitlab_srv.vm.provision 'shell', inline: 'cd /tmp && sudo dpkg -i gitlab-runner_amd64.deb'
+
+        gitlab_srv.vm.provider 'virtualbox' do |vb|
+            vb.memory = 8192
+            vb.cpus = 4
+            vb.name = 'gitlab-srv'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+    config.vm.define 'centos_srv02' do |centos_srv02|
+
+        centos_srv02.vm.box = 'centos/7'
+        centos_srv02.vm.hostname = 'centos-srv02'
+        centos_srv02.vm.network 'private_network', ip: ENV['CENTOS_SRV02']
+
+        centos_srv02.vm.provision 'shell', inline: 'sudo timedatectl set-timezone America/Sao_Paulo'
+        centos_srv02.vm.provision 'shell', inline: 'sudo cp /vagrant/files/ntpdate.sh /etc/cron.hourly/'
+        centos_srv02.vm.provision 'shell', inline: 'sudo sed -i s/^SELINUX=.*$/SELINUX=permissive/ /etc/selinux/config && sudo setenforce 0'
+        centos_srv02.vm.provision 'shell', inline: 'sudo systemctl stop firewalld && sudo systemctl disable firewalld'
+        centos_srv02.vm.provision 'shell', inline: 'sudo yum install -y git ntpdate'
+        centos_srv02.vm.provision 'shell', inline: 'sudo curl -fsSL https://get.docker.com/ | sh'
+        centos_srv02.vm.provision 'shell', inline: 'sudo systemctl start docker && sudo systemctl enable docker'
+        centos_srv02.vm.provision 'shell', inline: 'sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose'
+        centos_srv02.vm.provision 'shell', inline: 'sudo chmod +x /usr/local/bin/docker-compose'
+
+        centos_srv02.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'centos-srv02'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+
+        end
+
+    end
+
+end
